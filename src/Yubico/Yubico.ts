@@ -1,6 +1,5 @@
-import * as crypto from "crypto";
-import * as https from "https";
 import { Response, ResponseStatus } from "./Response";
+import { HmacSHA1, enc } from 'crypto-js';
 
 // Default API servers provided from Yubico
 const API_SERVERS = ["api.yubico.com", "api2.yubico.com", "api3.yubico.com", "api4.yubico.com", "api5.yubico.com"];
@@ -52,44 +51,31 @@ export class Yubico {
      * your own implementation of the Yubico verification servers. Otherwise, you should
      * leave this parameter blank and it will default to Yubico's.
      */
-    private apiServers: string[];
+    private apiServers?: string[];
 
     constructor(options?: IYubicoConstructor) {
         // Pull options from the constructor or from environment variables
         if (options && options.clientId) {
             this.clientId = options.clientId;
         } else {
-            if (!process.env.YUBICO_CLIENT_ID) {
-                throw new Error("Either clientId must be set in the constructor, or YUBICO_CLIENT_ID set as an environment variable");
-            }
-            this.clientId = process.env.YUBICO_CLIENT_ID;
+            throw new Error("Either clientId must be set in the constructor");
         }
 
         if (options && options.secret) {
             this.secret = options.secret;
         } else {
-            if (!process.env.YUBICO_SECRET) {
-                throw new Error("Either clientId must be set in the constructor, or YUBICO_SECRET set as an environment variable");
-            }
-            this.secret = process.env.YUBICO_SECRET;
+            throw new Error("Either clientId must be set in the constructor");
         }
 
         if (options && options.sl) {
             this.sl = options.sl;
-        } else {
-            this.sl = process.env.YUBICO_SL as SL;
         }
 
         if (options && options.timeout) {
             this.timeout = options.timeout;
-        } else {
-            this.timeout = process.env.YUBICO_TIMEOUT ? parseInt(process.env.YUBICO_TIMEOUT, 10) : undefined;
         }
-
         if (options && options.apiServers) {
             this.apiServers = options.apiServers;
-        } else {
-            this.apiServers = process.env.YUBICO_API_SERVERS ? process.env.YUBICO_API_SERVERS.split(",") : API_SERVERS;
         }
     }
 
@@ -102,7 +88,7 @@ export class Yubico {
         // Generate a nonce to send with the request
         // The Yubico docs state that the key can be between 16 and 40 characters long, so we
         // generate 20 bytes and convert it to 40 characters
-        const nonce = crypto.randomBytes(16).toString("hex");
+        const nonce = crypto.randomUUID().replace(/-/g, "");
 
         // Generate the request params outside the http call so that we can generate the
         // hash for the request
@@ -124,13 +110,8 @@ export class Yubico {
 
         // Sort them to properly allow for the security hash
         requestParams.sort();
-
         // Create and append the hash
-        const hash = crypto
-            .createHmac("sha1", Buffer.from(this.secret, "base64"))
-            .update(requestParams.toString())
-            .digest("base64");
-
+        const hash = HmacSHA1(requestParams.toString(),  enc.Base64.parse(this.secret)).toString(enc.Base64)
         requestParams.append("h", hash);
 
         // Keep track of all the failed responses
@@ -139,50 +120,20 @@ export class Yubico {
         // Create an array of cancellations to allow for early stop should one server
         // respond successfully
         const cancellationCallbacks: Array<() => void> = [];
-
-        const requestPromises = this.apiServers.map(
+        const servers = this.apiServers || API_SERVERS
+        const requestPromises = servers.map(
             (apiServer) =>
-                new Promise<Response | undefined>((resolve) => {
+                new Promise<Response | undefined>(async (resolve) => {
                     // Create a URL object for the request
                     const url = new URL("https://" + apiServer + "/wsapi/2.0/verify");
 
                     // Set the search of the url to the request param string
                     url.search = requestParams.toString();
-
-                    const req = https.get(url.href, (res) => {
-                        // The data we get will be text, so parse as utf8
-                        res.setEncoding("utf8");
-
-                        // Collect the chunks of data as they come in
-                        let incomingData = "";
-                        res.on("data", (chunk) => {
-                            incomingData += chunk;
-                        });
-
-                        // When the request is completed, check for the 200 status code and
-                        // resolve with the data
-                        res.on("end", () => {
-                            if (res.statusCode !== 200) {
-                                resolve(undefined);
-                            } else {
-                                resolve(Response.fromRawBody(incomingData));
-                            }
-                        });
-                        res.on("error", () => resolve(undefined));
+                    const req = await fetch(url.href).catch((err) => {
+                        throw new Error("Failed to fetch from Yubico: " + err);
                     });
-
-                    // Add a callback to allow the request to be cancelled
-                    cancellationCallbacks.push(() => {
-                        // Upon cancellation, abort the HTTP request and resolve
-                        req.abort();
-                        resolve(undefined);
-                    });
-
-                    // If the request errors, reject with the error
-                    req.on("error", () => resolve(undefined));
-
-                    // Close the write stream to send the request
-                    req.end();
+                    const res = await req.text();
+                    resolve(Response.fromRawBody(res));
                 }),
         );
 

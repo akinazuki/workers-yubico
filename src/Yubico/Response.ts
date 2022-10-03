@@ -1,5 +1,5 @@
-import * as crypto from "crypto";
-
+import { Buffer } from "buffer";
+import { HmacSHA1, enc } from 'crypto-js';
 export enum ResponseStatus {
     OK = "OK",
     BAD_OTP = "BAD_OTP",
@@ -68,7 +68,7 @@ export class Response {
         private sessioncounter: string,
         private sessionuse: string,
         private sl: number,
-    ) {}
+    ) { }
 
     /**
      * Validate the request against the nonce, secret, and otp
@@ -112,13 +112,8 @@ export class Response {
             .sort()
             .map((key) => key + "=" + (this as any)[key])
             .join("&");
-
         // Hash them to compare against the server's assertion
-        const hash = crypto
-            .createHmac("sha1", Buffer.from(secret, "base64"))
-            .update(body)
-            .digest("base64");
-
+        const hash = HmacSHA1(body, enc.Base64.parse(secret)).toString(enc.Base64);
         // If the hashes diverge, the response should not be trusted and we throw an error
         if (hash !== this.h) {
             throw new Error("Hash provided from server and client hash do not match");
