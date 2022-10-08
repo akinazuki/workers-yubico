@@ -8,7 +8,6 @@ This is a JS implementation of the Yubico Validation Protocol as outlined in the
 -   Typescript types built in
 -   Environment Variable Defaults
 
-```
 
 ## Yubico
 
