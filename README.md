@@ -8,16 +8,6 @@ This is a JS implementation of the Yubico Validation Protocol as outlined in the
 -   Typescript types built in
 -   Environment Variable Defaults
 
-## Environment Variables
-
-```
-
-YUBICO_CLIENT_ID    = Client ID from Yubico
-YUBICO_SECRET       = Secret from Yubico
-YUBICO_SL           = The SL to use (0 - 100, fast, or secure)
-YUBICO_TIMEOUT      = The timeout for the request (number)
-YUBICO_API_SERVERS  = If you run your own compliant verification servers, place the hosts  in a comma separated list (ex. api.yubico.com,api2.yubico.com, etc.)
-
 ```
 
 ## Yubico
